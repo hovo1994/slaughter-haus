@@ -6,41 +6,11 @@ import path from "path";
 import send from "koa-send";
 import { doWolfThings } from "./wolf";
 import serve from "koa-static";
+import { GameMessage, Player, WOLF_ID, playersDatabase } from "./data";
 
 const app = new Koa();
 const router = new Router();
 
-export interface GameMessage {
-  user_id: string;
-  x: number;
-  y: number;
-  image: string;
-  message?: string;
-}
-
-export interface Player {
-  user_id: string;
-  x: number;
-  y: number;
-  color: string;
-  image: string;
-  ws?: WebSocket;
-  lastInputReceived?: string; // date time when the last input from a client came in
-}
-
-export const WOLF_ID = "0";
-
-// map of user_id to Player
-export const playersDatabase: Record<string, Player> = {};
-
-// player 0 is the wolf
-playersDatabase["0"] = {
-  user_id: WOLF_ID,
-  x: 200,
-  y: 200,
-  color: "black",
-  image: "Wolf.png",
-};
 export const broadcast = (
   message: GameMessage,
   excludeUser: WebSocket | null = null
@@ -78,29 +48,45 @@ wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
   if (playerColor % 3 == 0) {
     imgForPlayer = "Pig_Blue.png";
   } else if (playerColor % 3 == 1) {
-    //Pig_Green.png
     imgForPlayer = "Pig_Green.png";
   } else if (playerColor % 3 == 2) {
-    //Pig_Red.png
     imgForPlayer = "Pig_Red.png";
   }
 
   playersDatabase[user_id] = {
     user_id,
-    x: Math.round(Math.random() * 200),
-    y: Math.round(Math.random() * 200),
+    x: Math.round(Math.random() * 500),
+    y: Math.round(Math.random() * 500),
     color: playerColorStr,
     ws,
+    score: 0,
     image: imgForPlayer,
   }; // Initial position
 
-  ws.send(
-    JSON.stringify({
-      user_id: user_id,
-      message: "new connection established",
-      color: playerColorStr,
-      image: imgForPlayer,
-    })
+  let msg2send: GameMessage = {
+    user_id: user_id,
+    msg_type: "new_connection",
+    message: "new connection established",
+    color: playerColorStr,
+    image: imgForPlayer,
+    x: playersDatabase[user_id].x,
+    y: playersDatabase[user_id].y,
+  };
+
+  sendMessage(msg2send, ws);
+
+  // broadcast new player to all other players
+  broadcast(
+    {
+      user_id,
+      x: playersDatabase[user_id].x,
+      y: playersDatabase[user_id].y,
+      image: playersDatabase[user_id].image,
+      msg_type: "game_message",
+      color: "",
+      score: playersDatabase[user_id].score,
+    },
+    ws
   );
 
   ws.on("message", (message: string) => {
@@ -110,42 +96,65 @@ wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
       playersDatabase[data.user_id].y = data.y;
       playersDatabase[data.user_id].lastInputReceived =
         new Date().toISOString();
-      console.log(data.user_id, playersDatabase[data.user_id]);
 
-      // Broadcast the updated coordinates to all other connections
-      doWolfThings(playersDatabase);
-      ws.send(
-        JSON.stringify({
-          user_id: data.user_id,
-          x: data.x,
-          y: data.y,
-          image: playersDatabase[data.user_id].image,
-        })
+      console.log(
+        "players database length",
+        Object.values(playersDatabase).length
       );
-      broadcast(
+
+      // move the wolf
+      doWolfThings();
+
+      // if not eaten
+      if (playersDatabase[user_id]) {
+        // update the player's location
+        sendMessage(
+          {
+            user_id: data.user_id,
+            x: data.x,
+            y: data.y,
+            image: playersDatabase[data.user_id].image,
+            msg_type: "game_message",
+            color: "",
+          },
+          ws
+        );
+        // broadcast the player's location to all other players
+        broadcast(
+          {
+            user_id: data.user_id,
+            x: data.x,
+            y: data.y,
+            image: playersDatabase[data.user_id].image,
+            msg_type: "game_message",
+            color: "",
+            score: playersDatabase[data.user_id].score,
+          },
+          ws
+        );
+      }
+
+      // update the wolf's location for the players connection
+      sendMessage(
         {
-          user_id: data.user_id,
-          x: data.x,
-          y: data.y,
-          image: playersDatabase[data.user_id].image,
+          user_id: WOLF_ID,
+          x: playersDatabase[WOLF_ID].x,
+          y: playersDatabase[WOLF_ID].y,
+          image: playersDatabase[WOLF_ID].image,
+          msg_type: "game_message",
+          color: "",
         },
         ws
       );
-      ws.send(
-        JSON.stringify({
-          user_id: WOLF_ID,
-          x: playersDatabase[WOLF_ID].x,
-          y: playersDatabase[WOLF_ID].y,
-          image: playersDatabase[WOLF_ID].image,
-        })
-      );
-
+      // broadcast the wolf's location to all other players
       broadcast(
         {
           user_id: WOLF_ID,
           x: playersDatabase[WOLF_ID].x,
           y: playersDatabase[WOLF_ID].y,
           image: playersDatabase[WOLF_ID].image,
+          msg_type: "game_message",
+          color: "",
         },
         ws
       );
@@ -158,15 +167,15 @@ wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
 
   // Send initial positions of all players to the newly connected client
   Object.entries(playersDatabase).forEach(([id, position]) => {
-    ws.send(
-      JSON.stringify({
-        user_id: id,
-        x: position.x,
-        y: position.y,
-        color: playersDatabase[id].color,
-        image: playersDatabase[id].image,
-      })
-    );
+    const message: GameMessage = {
+      user_id: id,
+      x: position.x,
+      y: position.y,
+      color: playersDatabase[id].color,
+      image: playersDatabase[id].image,
+      msg_type: "game_message",
+    };
+    sendMessage(message, ws);
   });
 });
 
@@ -182,14 +191,25 @@ function checkForDisconnectedUsers() {
       if (player.ws?.readyState === WebSocket.OPEN) {
         const message: GameMessage = {
           ...player,
+          msg_type: "afk_user",
           message: "player afk",
         };
-        player.ws?.send(JSON.stringify(message));
+        sendMessage(message, player.ws);
+
         return player.ws?.terminate();
       }
       player.ws?.terminate();
     }
   });
+}
+
+export function sendMessage(message: GameMessage, ws?: WebSocket) {
+  if (!ws) {
+    return;
+  }
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify(message));
+  }
 }
 
 setInterval(() => {

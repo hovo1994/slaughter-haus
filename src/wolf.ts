@@ -1,10 +1,6 @@
-import {
-  GameMessage,
-  Player,
-  WOLF_ID,
-  broadcast,
-  playersDatabase,
-} from "./main";
+import send from "koa-send";
+import { GameMessage, Player, WOLF_ID, playersDatabase } from "./data";
+import { broadcast, sendMessage } from "./main";
 
 function findDistanceToTarget(wolf: Player, pig: Player) {
   const dist = Math.sqrt(
@@ -17,44 +13,75 @@ export const WOLF_SPEED = 5;
 function moveTowardsTarget(wolf: Player, player: Player) {
   let distX = player.x - wolf.x;
   let distY = player.y - wolf.y;
+  let distToTarget = Math.ceil(findDistanceToTarget(wolf, player));
+  if (distToTarget < 20) {
+    eat(player);
+    return;
+  }
 
   if (Math.abs(distX) > Math.abs(distY)) {
     if (distX != 0) {
       wolf.x += (Math.abs(distX) / distX) * WOLF_SPEED;
-    } else {
-      eat(player);
     }
   } else {
     if (distY != 0) {
       wolf.y += (Math.abs(distY) / distY) * WOLF_SPEED;
-    } else {
-      eat(player);
     }
   }
+  // make sure we don't go out of bounds
+
+  wolf.x = Math.max(Math.min(650, wolf.x), 0);
+  wolf.y = Math.max(Math.min(650, wolf.y), 0);
 }
 
 // eat the pig
 function eat(player: Player) {
   const message: GameMessage = {
     ...player,
+    msg_type: "game_over",
     message: "you were eaten",
   };
   delete playersDatabase[player.user_id];
-  player.ws?.send(JSON.stringify(message));
-  const { ws, ...playerWithoutWebSocket } = player;
-  const message2: GameMessage = {
-    ...playerWithoutWebSocket,
-    message: "other player was eaten",
-  };
+  sendMessage(message, player.ws);
 
-  broadcast(message2, player.ws);
+  // increase all other's scores
+  Object.values(playersDatabase).forEach((p) => {
+    p.score = p.score + 1;
+    const message2: GameMessage = {
+      message: "you scored a point!",
+      msg_type: "score_point",
+      score: p.score,
+      user_id: p.user_id,
+      x: p.x,
+      y: p.y,
+      color: p.color,
+      image: p.image,
+    };
+    // tell them all about their scores
+    sendMessage(message2, p.ws);
+
+    // and about the deleted player
+    sendMessage(
+      {
+        msg_type: "delete_other_user",
+        user_id: player.user_id,
+        x: 0,
+        y: 0,
+        color: "",
+        image: "",
+      },
+      p.ws
+    );
+  });
+
+  // broadcast(message2, player.ws);
 }
 
-export function doWolfThings(playerDatabase: Record<string, Player>) {
-  const wolf = playerDatabase[WOLF_ID];
+export function doWolfThings() {
+  const wolf = playersDatabase[WOLF_ID];
   let closestTarget = Infinity;
   let closestPlayerId = "";
-  Object.entries(playerDatabase).forEach(([id, player]) => {
+  Object.entries(playersDatabase).forEach(([id, player]) => {
     if (id === WOLF_ID) {
       return;
     }
@@ -66,5 +93,5 @@ export function doWolfThings(playerDatabase: Record<string, Player>) {
     }
   });
   console.log("playerID: ", closestPlayerId);
-  moveTowardsTarget(wolf, playerDatabase[closestPlayerId]);
+  moveTowardsTarget(wolf, playersDatabase[closestPlayerId]);
 }
