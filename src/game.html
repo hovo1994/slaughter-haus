@@ -17,17 +17,21 @@
     </style>
   </head>
   <body>
-    <a
-      href="https://prod.liveshare.vsengsaas.visualstudio.com/join?6E95FE330476CDDE0434A84B835DC8E48CB5"
-      >liveshare</a
-    >
-    <div style="center;">
+    <div class="center">
+      <h1>Slaughter Haus</h1>
+      <p>Will any of the pigs survive??!?!?</p>
       <canvas id="canvas" width="700" height="700"></canvas>
     </div>
 
     <script>
       const canvas = document.getElementById("canvas");
       const ctx = canvas.getContext("2d");
+
+      const audio = document.createElement("audio");
+      audio.src = "/sound.wav";
+
+      const otherPigEaten = document.createElement("audio");
+      otherPigEaten.src = "/other-pig-eaten.wav";
 
       const socket = new WebSocket("ws://192.168.0.14:8080");
 
@@ -113,11 +117,13 @@
         }
 
         if (data.message === "you were eaten") {
+          audio.play();
           alert("You were eaten! you suck! Dismiss to try again");
           window.location.reload();
         }
 
         if (data.message === "other player was eaten") {
+          otherPigEaten.play();
           delete players[data.user_id];
           return;
         }
