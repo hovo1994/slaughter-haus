@@ -10,15 +10,11 @@ import serve from "koa-static";
 const app = new Koa();
 const router = new Router();
 
-type Coordinate = {
-  x: number;
-  y: number;
-};
-
-interface GameMessage {
+export interface GameMessage {
   user_id: string;
   x: number;
   y: number;
+  image: string;
   message?: string;
 }
 
@@ -27,17 +23,25 @@ export interface Player {
   x: number;
   y: number;
   color: string;
+  image: string;
+  ws?: WebSocket;
+  lastInputReceived?: string; // date time when the last input from a client came in
 }
 
+export const WOLF_ID = "0";
+
 // map of user_id to Player
-const playersDatabase: Record<string, Player> = {};
+export const playersDatabase: Record<string, Player> = {};
+
+// player 0 is the wolf
 playersDatabase["0"] = {
-  user_id: "0",
+  user_id: WOLF_ID,
   x: 200,
   y: 200,
   color: "black",
+  image: "Wolf.png",
 };
-const broadcast = (
+export const broadcast = (
   message: GameMessage,
   excludeUser: WebSocket | null = null
 ) => {
@@ -58,15 +62,10 @@ app.use(serve(path.join(__dirname, "images")));
 const server = http.createServer(app.callback());
 const wss = new WebSocket.Server({ noServer: true });
 
-function heartbeat(this: any) {
-  this.isAlive = true;
-}
-
 wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
   ws["isAlive"] = true;
   ws.on("error", console.error);
-  ws.on("pong", heartbeat);
-  console.log(ws);
+
   // Generate a unique user_id for each connection
   const user_id = Math.random().toString(36).substring(7);
   ws.id = user_id;
@@ -74,20 +73,33 @@ wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
   const playerColorStr = `rgb(${playerColor % 125}, ${playerColor}, ${
     playerColor / 2
   })`;
+
+  let imgForPlayer = "Pig_Blue.png";
+  if (playerColor % 3 == 0) {
+    imgForPlayer = "Pig_Blue.png";
+  } else if (playerColor % 3 == 1) {
+    //Pig_Green.png
+    imgForPlayer = "Pig_Green.png";
+  } else if (playerColor % 3 == 2) {
+    //Pig_Red.png
+    imgForPlayer = "Pig_Red.png";
+  }
+
   playersDatabase[user_id] = {
     user_id,
-    x: 50,
-    y: 50,
+    x: Math.round(Math.random() * 200),
+    y: Math.round(Math.random() * 200),
     color: playerColorStr,
+    ws,
+    image: imgForPlayer,
   }; // Initial position
-
-  console.log("random num: ", playerColor);
 
   ws.send(
     JSON.stringify({
       user_id: user_id,
       message: "new connection established",
       color: playerColorStr,
+      image: imgForPlayer,
     })
   );
 
@@ -96,13 +108,51 @@ wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
       const data: GameMessage = JSON.parse(message);
       playersDatabase[data.user_id].x = data.x;
       playersDatabase[data.user_id].y = data.y;
+      playersDatabase[data.user_id].lastInputReceived =
+        new Date().toISOString();
       console.log(data.user_id, playersDatabase[data.user_id]);
 
       // Broadcast the updated coordinates to all other connections
-      ws.send(JSON.stringify({ user_id: data.user_id, x: data.x, y: data.y }));
-      broadcast({ user_id: data.user_id, x: data.x, y: data.y }, ws);
-    } catch (error) {
-      console.error("Invalid message format:", message);
+      doWolfThings(playersDatabase);
+      ws.send(
+        JSON.stringify({
+          user_id: data.user_id,
+          x: data.x,
+          y: data.y,
+          image: playersDatabase[data.user_id].image,
+        })
+      );
+      broadcast(
+        {
+          user_id: data.user_id,
+          x: data.x,
+          y: data.y,
+          image: playersDatabase[data.user_id].image,
+        },
+        ws
+      );
+      ws.send(
+        JSON.stringify({
+          user_id: WOLF_ID,
+          x: playersDatabase[WOLF_ID].x,
+          y: playersDatabase[WOLF_ID].y,
+          image: playersDatabase[WOLF_ID].image,
+        })
+      );
+
+      broadcast(
+        {
+          user_id: WOLF_ID,
+          x: playersDatabase[WOLF_ID].x,
+          y: playersDatabase[WOLF_ID].y,
+          image: playersDatabase[WOLF_ID].image,
+        },
+        ws
+      );
+    } catch (error: any) {
+      console.log(error.message);
+      console.log(error.stack);
+      console.error("Invalid message format:", String(message));
     }
   });
 
@@ -114,26 +164,36 @@ wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
         x: position.x,
         y: position.y,
         color: playersDatabase[id].color,
+        image: playersDatabase[id].image,
       })
     );
   });
 });
 
-// check for closed connections
-const interval = setInterval(function ping() {
-  wss.clients.forEach((ws: any) => {
-    if (ws["isAlive"] === false) return ws.terminate();
-    delete playersDatabase[ws.id];
-    broadcast({
-      x: 0,
-      y: 0,
-      user_id: ws.id,
-      message: "connection dropped",
-    });
-
-    ws.isAlive = false;
-    ws.ping();
+function checkForDisconnectedUsers() {
+  Object.entries(playersDatabase).forEach(([user_id, player]) => {
+    if (
+      player.lastInputReceived &&
+      new Date().getTime() - new Date(player.lastInputReceived).getTime() >
+        1000 * 60 * 2 // 2 minutes
+    ) {
+      console.log("Disconnecting user:", player.user_id);
+      delete playersDatabase[user_id];
+      if (player.ws?.readyState === WebSocket.OPEN) {
+        const message: GameMessage = {
+          ...player,
+          message: "player afk",
+        };
+        player.ws?.send(JSON.stringify(message));
+        return player.ws?.terminate();
+      }
+      player.ws?.terminate();
+    }
   });
+}
+
+setInterval(() => {
+  checkForDisconnectedUsers();
 }, 1000);
 
 server.on("upgrade", (request, socket, head) => {
