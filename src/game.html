@@ -12,7 +12,7 @@
   </head>
   <body>
     <a
-      href="https://prod.liveshare.vsengsaas.visualstudio.com/join?6060A3B7AB6A44971FEF4F366ABF8D54B231"
+      href="https://prod.liveshare.vsengsaas.visualstudio.com/join?6E95FE330476CDDE0434A84B835DC8E48CB5"
       >liveshare</a
     >
     <canvas id="canvas" width="400" height="400"></canvas>
@@ -48,10 +48,10 @@
         ctx.fillRect(x, y, 50, 50);
       }
       // Funtion to draw Pigs
-      function drawPig(user_id, x, y){
+      function drawPig(user_id, x, y) {
         var pigImg = new Image();
-        pigImg.src = '/images/Pig_Blue.png';
-        ctx.drawImage(pigImg, x, y)
+        pigImg.src = "/images/Pig_Blue.png";
+        ctx.drawImage(pigImg, x, y);
       }
       // Send coordinates to the server when arrow keys are pressed
       document.addEventListener("keydown", (event) => {
@@ -87,13 +87,14 @@
 
           // Draw the initial square
           drawSquare(playerId, 50, 50, colorOfPlayer);
+          drawPig(playerID, 50, 50);
           // drawSquare("asdf", 90, 90);
+        }
 
-
-          if (data.message === "connection dropped") {
-            console.log('connection dropped', data)
-            delete players[data.user_id]
-          }
+        if (data.message === "connection dropped") {
+          console.log("connection dropped", data);
+          delete players[data.user_id];
+        }
 
         const { user_id, x, y, color } = data;
         console.log("got", user_id, x, y, color);
@@ -104,6 +105,7 @@
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         Object.entries(players).forEach(([id, coordinate]) => {
           drawSquare(user_id, coordinate.x, coordinate.y, coordinate.color);
+          drawPig(user_id, coordinate.x, coordinate.y);
         });
       });
     </script>

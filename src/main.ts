@@ -5,6 +5,7 @@ import WebSocket from "ws";
 import path from "path";
 import send from "koa-send";
 import { doWolfThings } from "./wolf";
+import serve from "koa-static";
 
 const app = new Koa();
 const router = new Router();
@@ -51,16 +52,15 @@ router.get("/", async (ctx) => {
   await send(ctx, "src/game.html");
 });
 
+console.log(path.join(__dirname, "images"));
+app.use(serve(path.join(__dirname, "images")));
+
 const server = http.createServer(app.callback());
 const wss = new WebSocket.Server({ noServer: true });
 
 function heartbeat(this: any) {
   this.isAlive = true;
 }
-
-/*
-
-*/
 
 wss.on("connection", (ws: WebSocket & { isAlive: boolean; id: string }) => {
   ws["isAlive"] = true;
