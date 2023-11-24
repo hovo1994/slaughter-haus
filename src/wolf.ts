@@ -10,6 +10,8 @@ function findDistanceToTarget(wolf: Player, pig: Player) {
 }
 export const WOLF_SPEED = 5;
 
+let score = 0;
+
 function moveTowardsTarget(wolf: Player, player: Player) {
   let distX = player.x - wolf.x;
   let distY = player.y - wolf.y;

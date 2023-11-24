@@ -73,7 +73,7 @@
       const otherPigEaten = document.createElement("audio");
       otherPigEaten.src = "/other-pig-eaten.wav";
 
-      const socket = new WebSocket("ws://192.168.0.14:8080");
+      const socket = new WebSocket(`ws://${location.hostname}:8080`);
 
       // Initial square position
       let x = 50;
