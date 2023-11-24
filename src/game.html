@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WebSocket Canvas</title>
+    <style>
+      canvas {
+        border: 1px solid #000;
+      }
+    </style>
+  </head>
+  <body>
+    <a
+      href="https://prod.liveshare.vsengsaas.visualstudio.com/join?6060A3B7AB6A44971FEF4F366ABF8D54B231"
+      >liveshare</a
+    >
+    <canvas id="canvas" width="400" height="400"></canvas>
+
+    <script>
+      // random string
+      function uuidv4() {
+        return "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) =>
+          (
+            c ^
+            (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))
+          ).toString(16)
+        );
+      }
+      const canvas = document.getElementById("canvas");
+      const ctx = canvas.getContext("2d");
+
+      const socket = new WebSocket("ws://192.168.0.14:8080");
+
+      // Initial square position
+      let x = 50;
+      let y = 50;
+      let playerId;
+
+      // socket.send(JSON.stringify({ user_id: playerId, x, y }));
+
+      const players = {};
+
+      // Function to draw the square with a unique color for each user
+      function drawSquare(user_id, x, y, color) {
+        ctx.fillStyle = color;
+        // ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.fillRect(x, y, 50, 50);
+      }
+      // Funtion to draw Pigs
+      function drawPig(user_id, x, y){
+        var pigImg = new Image();
+        pigImg.src = '/images/Pig_Blue.png';
+        ctx.drawImage(pigImg, x, y)
+      }
+      // Send coordinates to the server when arrow keys are pressed
+      document.addEventListener("keydown", (event) => {
+        switch (event.key) {
+          case "ArrowUp":
+            y -= 10;
+            break;
+          case "ArrowDown":
+            y += 10;
+            break;
+          case "ArrowLeft":
+            x -= 10;
+            break;
+          case "ArrowRight":
+            x += 10;
+            break;
+        }
+
+        // drawSquare("blue"); // Use a unique color for each user
+
+        // Send the updated coordinates to the server over WebSocket
+        console.log("sending", { user_id: playerId, x, y });
+        socket.send(JSON.stringify({ user_id: playerId, x, y }));
+      });
+
+      socket.addEventListener("message", (event) => {
+        const data = JSON.parse(event.data);
+        if (data.message === "new connection established") {
+          console.log("initial connection", data);
+          console.log("this is the player id", data.user_id);
+          playerId = data.user_id;
+          colorOfPlayer = data.color;
+
+          // Draw the initial square
+          drawSquare(playerId, 50, 50, colorOfPlayer);
+          // drawSquare("asdf", 90, 90);
+
+
+          if (data.message === "connection dropped") {
+            console.log('connection dropped', data)
+            delete players[data.user_id]
+          }
+
+        const { user_id, x, y, color } = data;
+        console.log("got", user_id, x, y, color);
+        players[user_id] = { x, y, color };
+
+        // Draw the square for the received user
+        console.log("players", players);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        Object.entries(players).forEach(([id, coordinate]) => {
+          drawSquare(user_id, coordinate.x, coordinate.y, coordinate.color);
+        });
+      });
+    </script>
+  </body>
+</html>
